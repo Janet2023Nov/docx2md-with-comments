@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+*.docx
+*.md
+!README.md
+!docx2md-with-comments/skill.md
