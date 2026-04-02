@@ -97,8 +97,9 @@ def parse_hyperlinks(zip_file):
     return rels
 
 
-def get_run_text(run, hyperlinks):
-    """Extract text from a w:r (run) element with formatting."""
+def get_run_raw(run):
+    """Extract raw text and format tuple from a w:r element.
+    Returns (format_tuple, text) where format_tuple is (bold, italic, strike)."""
     rpr = run.find('w:rPr', NS)
     bold = rpr is not None and rpr.find('w:b', NS) is not None
     italic = rpr is not None and rpr.find('w:i', NS) is not None
@@ -116,11 +117,78 @@ def get_run_text(run, hyperlinks):
         elif tag == 'sym':
             texts.append('')  # skip symbols
 
-    text = ''.join(texts)
-    if not text:
+    return ((bold, italic, strike), ''.join(texts))
+
+
+def merge_runs_to_md(raw_runs):
+    """Merge adjacent runs with same formatting, then convert to markdown.
+    Also absorbs whitespace-only runs into adjacent bold/italic groups,
+    and moves leading/trailing whitespace outside ** markers."""
+    if not raw_runs:
         return ''
 
-    # Apply formatting
+    # Pass 1: absorb whitespace-only plain runs into adjacent formatted groups
+    absorbed = []
+    plain = (False, False, False)
+    for i, (fmt, text) in enumerate(raw_runs):
+        if text.strip() == '' and fmt == plain:
+            prev_fmt = absorbed[-1][0] if absorbed else None
+            next_fmt = raw_runs[i + 1][0] if i + 1 < len(raw_runs) else None
+            if prev_fmt and next_fmt and prev_fmt == next_fmt and prev_fmt != plain:
+                absorbed[-1] = (prev_fmt, absorbed[-1][1] + text)
+                continue
+        absorbed.append((fmt, text))
+
+    # Pass 2: merge consecutive runs with same format
+    groups = []
+    cur_fmt = None
+    cur_texts = []
+    for fmt, text in absorbed:
+        if fmt == cur_fmt:
+            cur_texts.append(text)
+        else:
+            if cur_texts:
+                groups.append((cur_fmt, ''.join(cur_texts)))
+            cur_fmt = fmt
+            cur_texts = [text]
+    if cur_texts:
+        groups.append((cur_fmt, ''.join(cur_texts)))
+
+    # Pass 3: convert to markdown with whitespace outside markers
+    parts = []
+    for (bold, italic, strike), text in groups:
+        if not text:
+            continue
+        if bold or italic:
+            stripped = text.strip()
+            if not stripped:
+                parts.append(text)
+                continue
+            leading = text[:len(text) - len(text.lstrip())]
+            trailing = text[len(text.rstrip()):]
+            if bold and italic:
+                inner = f'***{stripped}***'
+            elif bold:
+                inner = f'**{stripped}**'
+            else:
+                inner = f'*{stripped}*'
+            if strike:
+                inner = f'~~{inner}~~'
+            parts.append(f'{leading}{inner}{trailing}')
+        elif strike:
+            parts.append(f'~~{text}~~')
+        else:
+            parts.append(text)
+
+    return ''.join(parts)
+
+
+def get_run_text(run, hyperlinks):
+    """Extract text from a w:r (run) element with formatting (legacy single-run helper)."""
+    fmt, text = get_run_raw(run)
+    if not text:
+        return ''
+    bold, italic, strike = fmt
     if bold and italic:
         text = f'***{text}***'
     elif bold:
@@ -237,23 +305,28 @@ def process_paragraph(paragraph, hyperlinks):
             if cid and cid not in comment_ids:
                 comment_ids.append(cid)
 
-    # Build paragraph text
-    text_parts = []
+    # Build paragraph text using run merging for clean bold/italic
+    raw_runs = []
+    hyperlink_insertions = []  # (position_index, markdown_text)
     for child in paragraph:
         tag = _local_tag(child)
         if tag == 'r':
-            text_parts.append(get_run_text(child, hyperlinks))
+            raw_runs.append(get_run_raw(child))
         elif tag == 'hyperlink':
             rid = child.get(f'{{{NS["r"]}}}id', '')
+            link_runs = child.findall('w:r', NS)
             link_text = ''.join(
-                get_run_text(r, hyperlinks) for r in child.findall('w:r', NS)
+                get_run_raw(r)[1] for r in link_runs
             )
             if rid in hyperlinks:
-                text_parts.append(f'[{link_text}]({hyperlinks[rid]})')
+                # Insert a plain-formatted run with the markdown link
+                raw_runs.append(((False, False, False), f'[{link_text}]({hyperlinks[rid]})'))
             else:
-                text_parts.append(link_text)
+                # Preserve formatting of hyperlink runs
+                for r in link_runs:
+                    raw_runs.append(get_run_raw(r))
 
-    text = ''.join(text_parts).strip()
+    text = merge_runs_to_md(raw_runs).strip()
 
     if not text and not heading_level:
         return ('', comment_ids) if comment_ids else (None, [])
