@@ -1,3 +1,7 @@
+---
+name: docx2md-with-comments
+description: "Convert Word (.docx) files to clean Markdown with Word comments preserved as inline blockquotes. Use when the user mentions 'docx to md', 'docx to markdown', 'convert docx', 'docx with comments', '转成md', '转成markdown', or requests to extract content from .docx files while keeping reviewer comments. Do NOT use for creating or editing .docx files."
+---
 # docx2md-with-comments
 
 Convert Word (.docx) files to clean Markdown with inline comments preserved.

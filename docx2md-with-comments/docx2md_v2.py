@@ -319,8 +319,7 @@ def process_paragraph(paragraph, hyperlinks):
                 get_run_raw(r)[1] for r in link_runs
             )
             if rid in hyperlinks:
-                # Insert a plain-formatted run with the markdown link
-                raw_runs.append(((False, False, False), f'[{link_text}]({hyperlinks[rid]})'))
+                text_parts.append(f'[{link_text}]({hyperlinks[rid]})')
             else:
                 # Preserve formatting of hyperlink runs
                 for r in link_runs:
