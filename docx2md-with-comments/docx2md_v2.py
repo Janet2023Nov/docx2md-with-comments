@@ -307,7 +307,6 @@ def process_paragraph(paragraph, hyperlinks):
 
     # Build paragraph text using run merging for clean bold/italic
     raw_runs = []
-    hyperlink_insertions = []  # (position_index, markdown_text)
     for child in paragraph:
         tag = _local_tag(child)
         if tag == 'r':
@@ -319,7 +318,8 @@ def process_paragraph(paragraph, hyperlinks):
                 get_run_raw(r)[1] for r in link_runs
             )
             if rid in hyperlinks:
-                text_parts.append(f'[{link_text}]({hyperlinks[rid]})')
+                # Insert link as a no-format run so merge_runs_to_md keeps it
+                raw_runs.append(((False, False, False), f'[{link_text}]({hyperlinks[rid]})'))
             else:
                 # Preserve formatting of hyperlink runs
                 for r in link_runs:
